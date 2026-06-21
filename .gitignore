@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.env
+venv/
+data/raw/
+data/embeddings/*.npy
+data/embeddings/*.pt
+runs/*.pt
+
+# File nhỏ thì giữ lại để chia sẻ giữa 2 người
+!data/embeddings/transcripts.json
+!data/embeddings/splits.json
