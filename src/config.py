@@ -31,11 +31,13 @@ P3_LR           = 1e-3
 P3_EPOCHS       = 30
 P3_BATCH_SIZE   = 64
 
-EMBED_DIR       = "../data/embeddings"
-RUNS_DIR        = "../runs"
-FIGURES_DIR     = "../reports/figures"
+ON_COLAB    = os.path.exists("/content")
+DRIVE_DIR   = "/content/drive/MyDrive/ViMamba-SER-outputs" if ON_COLAB else ".."
+EMBED_DIR   = f"{DRIVE_DIR}/embeddings"
+FIGURES_DIR = f"{DRIVE_DIR}/figures"
+RUNS_DIR    = f"{DRIVE_DIR}/runs"
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-for d in [EMBED_DIR, RUNS_DIR, FIGURES_DIR]:
+for d in [EMBED_DIR, FIGURES_DIR, RUNS_DIR]:
     os.makedirs(d, exist_ok=True)
