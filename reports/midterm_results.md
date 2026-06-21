@@ -15,9 +15,10 @@
 | B1 PhoBERT → MLP (text-only, label proxy) | 100.00% |
 | B2 WavLM + PhoBERT concat → MLP (label proxy) | 100.00% |
 
-## Notes
-- Dataset: ViSEC (5,280 samples, 4 emotions: angry/happy/neutral/sad)
-- Audio encoder: WavLM-Base (microsoft/wavlm-base), frozen
-- Text encoder: PhoBERT-v2 (vinai/phobert-base-v2), frozen
-- Split: 70/15/15 stratified, seed=42
-- B1/B2 dùng label proxy → 100% là expected, chỉ verify pipeline
+## Setup
+- Dataset  : ViSEC (5,280 samples, 4 classes: angry/happy/neutral/sad)
+- Audio    : WavLM-Base (microsoft/wavlm-base), frozen
+- Text     : PhoBERT-v2 (vinai/phobert-base-v2), frozen
+- Split    : 70/15/15 stratified, seed=42
+- Epochs   : 50
+- B1/B2    : Label proxy → 100% expected, pipeline verify only
