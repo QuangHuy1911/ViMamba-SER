@@ -1,0 +1,66 @@
+# ============================================================
+# Phase F — Hyperparameters
+# TME + BiSequenceFusion + MLP classifier
+#
+# Giữ nhất quán optimizer/epochs/dropout với Phase A/B midterm
+# để so sánh công bằng. Chỉ thêm tham số mới cho TME và Fusion.
+# ============================================================
+
+# --- Pretrained encoders (frozen, chỉ dùng inference) ---
+encoders:
+  wavlm_checkpoint: "microsoft/wavlm-base"
+  phowhisper_checkpoint: "vinai/phowhisper-base"
+  phobert_checkpoint: "vinai/phobert-base-v2"
+  embed_dim: 768
+  sample_rate: 16000
+
+# --- Dataset ---
+data:
+  dataset_name: "hustep-lab/ViSEC"
+  num_classes: 4
+  label_names: ["angry", "happy", "neutral", "sad"]
+  label_map:
+    angry: 0
+    happy: 1
+    neutral: 2
+    sad: 3
+
+# --- TME module ---
+tme:
+  num_heads: 8           # 768 / 8 = 96 dim/head
+  dropout: 0.1           # dropout cho cross-attention
+
+# --- Fusion module ---
+fusion:
+  hidden_dim: 768        # giữ nguyên 768; giảm về 256-384 nếu overfit
+  force_fallback: false   # true = ép BiGRU, false = dùng Mamba nếu có
+  mamba_d_state: 16
+  mamba_d_conv: 4
+  mamba_expand: 2
+  gru_num_layers: 2
+  gru_dropout: 0.1
+
+# --- MLP classifier ---
+classifier:
+  dropout: 0.3           # giữ đúng Phase A (A3 đã chứng minh tốt hơn BatchNorm)
+
+# --- Training ---
+training:
+  optimizer: "adam"
+  lr: 1.0e-3             # giữ nhất quán Phase A/B
+  weight_decay: 1.0e-4
+  epochs: 50
+  batch_size: 32         # giảm về 16 nếu VRAM không đủ (Colab free)
+  early_stopping_patience: 10
+  seed: 42
+
+# --- Cross-validation ---
+cv:
+  n_folds: 5
+  stratified: true
+
+# --- Paths ---
+paths:
+  cache_dir: "data/embeddings/sequence"    # cache sequence embeddings
+  checkpoint_dir: "runs"
+  results_dir: "reports"
