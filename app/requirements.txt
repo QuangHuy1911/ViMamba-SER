@@ -1,0 +1,8 @@
+gradio>=4.0.0
+torch
+torchaudio
+transformers
+librosa
+pandas
+matplotlib
+pyyaml
