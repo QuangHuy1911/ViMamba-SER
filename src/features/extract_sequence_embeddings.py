@@ -45,30 +45,66 @@ def download_visec_if_needed(raw_dir: str = "data/raw/audio"):
     try:
         from datasets import load_dataset
         import soundfile as sf
+        import librosa
         
         # Load dataset từ HF, thông thường ViSEC nằm ở split 'train'
         dataset = load_dataset("hustep-lab/ViSEC", split="train")
         
         print(f"Đã tải xong metadata, tiến hành lưu {len(dataset)} file .wav...")
+        success_count = 0
+        fail_count = 0
+        
         for idx, item in enumerate(dataset):
-            audio_data = item.get("audio")
-            if audio_data is None:
-                continue
+            try:
+                # datasets>=4.0 đổi cách trả về dữ liệu audio thành AudioDecoder trong cột 'path'
+                audio_decoder = item.get("path")
+                if audio_decoder is None:
+                    # fallback nếu có cột audio
+                    audio_decoder = item.get("audio")
+                    
+                if audio_decoder is None:
+                    print(f"Sample {idx}: Không tìm thấy trường 'path' hoặc 'audio'. Bỏ qua.")
+                    fail_count += 1
+                    continue
+                    
+                # Hỗ trợ cả API cũ (dict) và mới (AudioDecoder)
+                if isinstance(audio_decoder, dict) and "array" in audio_decoder:
+                    waveform = audio_decoder["array"]
+                    sr = audio_decoder["sampling_rate"]
+                else:
+                    # API mới: torchcodec.decoders.AudioDecoder
+                    audio_samples = audio_decoder.get_all_samples()
+                    waveform = audio_samples.data.numpy()  # shape (num_channels, num_samples)
+                    sr = audio_samples.sample_rate
+                    
+                    # Mix down to mono (trung bình cộng các kênh)
+                    if waveform.ndim == 2 and waveform.shape[0] > 1:
+                        waveform = waveform.mean(axis=0)
+                    elif waveform.ndim == 2 and waveform.shape[0] == 1:
+                        waveform = waveform[0]
+                        
+                # Đảm bảo 16kHz
+                if sr != 16000:
+                    waveform = librosa.resample(waveform, orig_sr=sr, target_sr=16000)
+                    sr = 16000
                 
-            waveform = audio_data["array"]
-            sr = audio_data["sampling_rate"]
-            
-            # Đặt tên file theo chuẩn của project: sample_00000.wav
-            filename = f"sample_{idx:05d}.wav"
-            out_path = out_dir / filename
-            
-            sf.write(str(out_path), waveform, sr)
-            
-        print("Tải và lưu ViSEC dataset thành công!")
-    except ImportError:
-        print("CẢNH BÁO: Chưa cài đặt thư viện 'datasets' hoặc 'soundfile'. Hãy chạy: pip install datasets soundfile")
+                # Đặt tên file theo chuẩn của project: sample_00000.wav
+                filename = f"sample_{idx:05d}.wav"
+                out_path = out_dir / filename
+                
+                sf.write(str(out_path), waveform, sr)
+                success_count += 1
+                
+            except Exception as e:
+                print(f"Lỗi ở sample {idx}: {str(e)}")
+                fail_count += 1
+                
+        print(f"Tải và lưu ViSEC dataset hoàn tất! Thành công: {success_count} | Thất bại: {fail_count}")
+        
+    except ImportError as e:
+        print(f"CẢNH BÁO: Thiếu thư viện ({e}). Hãy chạy: pip install datasets soundfile librosa torchcodec")
     except Exception as e:
-        print(f"Lỗi khi tải dataset từ HuggingFace: {e}")
+        print(f"Lỗi nghiêm trọng khi tải dataset từ HuggingFace: {e}")
 
 def extract_wavlm_sequence(
     waveform: torch.Tensor,
