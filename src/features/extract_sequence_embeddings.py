@@ -316,12 +316,13 @@ if __name__ == "__main__":
     print(f"Sử dụng thiết bị: {device}")
     
     try:
-        wavlm_processor = AutoProcessor.from_pretrained("microsoft/wavlm-base")
+        from transformers import AutoFeatureExtractor
+        wavlm_processor = AutoFeatureExtractor.from_pretrained("microsoft/wavlm-base")
         wavlm_model = WavLMModel.from_pretrained("microsoft/wavlm-base").to(device)
         wavlm_model.eval()
         
-        phobert_tokenizer = AutoTokenizer.from_pretrained("vinai/phobert-v2")
-        phobert_model = AutoModel.from_pretrained("vinai/phobert-v2").to(device)
+        phobert_tokenizer = AutoTokenizer.from_pretrained("vinai/phobert-base-v2")
+        phobert_model = AutoModel.from_pretrained("vinai/phobert-base-v2").to(device)
         phobert_model.eval()
     except Exception as e:
         print(f"Lỗi khi tải mô hình (cần kết nối mạng): {e}")
