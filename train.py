@@ -306,6 +306,10 @@ def train(args):
     class_correct = {i: 0 for i in range(NUM_CLASSES)}
     class_total = {i: 0 for i in range(NUM_CLASSES)}
     
+    all_y_true = []
+    all_y_pred = []
+    all_y_prob = []
+    
     with torch.no_grad():
         for batch in test_loader:
             if args.phase in ['a', 'b']:
@@ -320,7 +324,13 @@ def train(args):
                 outputs = model(a_seq, t_seq, audio_mask=a_mask, text_mask=t_mask)
                 logits = outputs['logits']
                 
+            probs = torch.softmax(logits, dim=1)
             preds = logits.argmax(dim=1)
+            
+            all_y_true.extend(y.cpu().numpy())
+            all_y_pred.extend(preds.cpu().numpy())
+            all_y_prob.extend(probs.cpu().numpy())
+            
             test_correct += (preds == y).sum().item()
             test_total += y.size(0)
             
@@ -334,10 +344,33 @@ def train(args):
         if class_total[i] > 0:
             print(f"  Class {i} ({LABEL_NAMES[i]}): {class_correct[i]/class_total[i]:.4f}")
             
+    import pandas as pd
+    from sklearn.metrics import classification_report, confusion_matrix
+    
+    fold_str = f"fold{args.fold}" if args.fold is not None else f"seed{args.seed}"
+    
+    res_df = pd.DataFrame({'y_true': all_y_true, 'y_pred': all_y_pred})
+    for i in range(NUM_CLASSES):
+        res_df[f'prob_class_{i}'] = np.array(all_y_prob)[:, i]
+    out_csv = os.path.join(args.save_dir, f"predictions_phase{args.phase}_{fold_str}.csv")
+    res_df.to_csv(out_csv, index=False)
+    
+    cm = confusion_matrix(all_y_true, all_y_pred)
+    cm_path = os.path.join(args.save_dir, f"cm_phase{args.phase}_{fold_str}.npy")
+    np.save(cm_path, cm)
+    
+    cr = classification_report(all_y_true, all_y_pred, target_names=LABEL_NAMES, output_dict=True, zero_division=0)
+    cr_path = os.path.join(args.save_dir, f"classification_report_phase{args.phase}_{fold_str}.json")
+    with open(cr_path, 'w', encoding='utf-8') as f:
+        json.dump(cr, f, indent=4)
+            
     return {
         'test_acc': test_acc,
         'val_acc': best_val_acc,
-        'epoch': best_epoch
+        'epoch': best_epoch,
+        'predictions_path': out_csv,
+        'cm_path': cm_path,
+        'cr_path': cr_path
     }
 
 if __name__ == "__main__":
