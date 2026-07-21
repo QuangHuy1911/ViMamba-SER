@@ -28,6 +28,48 @@ except ImportError:
     pass
 
 
+def download_visec_if_needed(raw_dir: str = "data/raw/audio"):
+    """
+    Tải dataset ViSEC từ HuggingFace nếu chưa có sẵn ở thư mục raw_dir.
+    Dùng thư viện `datasets` để tải và trích xuất file .wav.
+    """
+    out_dir = Path(raw_dir)
+    # Kiểm tra xem đã có data chưa (giả sử có ít nhất 1000 file thì coi như đã tải)
+    if out_dir.exists() and len(list(out_dir.glob("*.wav"))) > 1000:
+        print(f"Dataset đã tồn tại ở {raw_dir}, bỏ qua bước tải từ HuggingFace.")
+        return
+
+    print(f"Đang tự động tải dataset hustep-lab/ViSEC từ HuggingFace xuống {raw_dir}...")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    
+    try:
+        from datasets import load_dataset
+        import soundfile as sf
+        
+        # Load dataset từ HF, thông thường ViSEC nằm ở split 'train'
+        dataset = load_dataset("hustep-lab/ViSEC", split="train")
+        
+        print(f"Đã tải xong metadata, tiến hành lưu {len(dataset)} file .wav...")
+        for idx, item in enumerate(dataset):
+            audio_data = item.get("audio")
+            if audio_data is None:
+                continue
+                
+            waveform = audio_data["array"]
+            sr = audio_data["sampling_rate"]
+            
+            # Đặt tên file theo chuẩn của project: sample_00000.wav
+            filename = f"sample_{idx:05d}.wav"
+            out_path = out_dir / filename
+            
+            sf.write(str(out_path), waveform, sr)
+            
+        print("Tải và lưu ViSEC dataset thành công!")
+    except ImportError:
+        print("CẢNH BÁO: Chưa cài đặt thư viện 'datasets' hoặc 'soundfile'. Hãy chạy: pip install datasets soundfile")
+    except Exception as e:
+        print(f"Lỗi khi tải dataset từ HuggingFace: {e}")
+
 def extract_wavlm_sequence(
     waveform: torch.Tensor,
     model: "WavLMModel",
