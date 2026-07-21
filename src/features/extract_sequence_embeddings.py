@@ -288,3 +288,100 @@ def extract_and_cache_all(
         result[sid] = paths
 
     return result
+
+
+if __name__ == "__main__":
+    import argparse
+    import librosa
+    
+    # Nếu chạy script này độc lập
+    print("=== BẮT ĐẦU TRÍCH XUẤT SEQUENCE EMBEDDINGS ===")
+    
+    # 1. Tải dataset ViSEC nếu cần (lưu raw audio)
+    download_visec_if_needed(raw_dir="data/raw/audio")
+    
+    # 2. Đọc metadata/transcript từ HuggingFace
+    # Transcript và nhãn (emotion) đã có sẵn trong dataset ViSEC, không cần chạy PhoWhisper
+    print("Đang tải metadata dataset từ HuggingFace...")
+    try:
+        from datasets import load_dataset
+        dataset = load_dataset("hustep-lab/ViSEC", split="train")
+    except Exception as e:
+        print(f"Lỗi khi load dataset: {e}")
+        exit(1)
+        
+    # 3. Load models (WavLM & PhoBERT)
+    print("Đang tải các mô hình WavLM và PhoBERT...")
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"Sử dụng thiết bị: {device}")
+    
+    try:
+        wavlm_processor = AutoProcessor.from_pretrained("microsoft/wavlm-base")
+        wavlm_model = WavLMModel.from_pretrained("microsoft/wavlm-base").to(device)
+        wavlm_model.eval()
+        
+        phobert_tokenizer = AutoTokenizer.from_pretrained("vinai/phobert-v2")
+        phobert_model = AutoModel.from_pretrained("vinai/phobert-v2").to(device)
+        phobert_model.eval()
+    except Exception as e:
+        print(f"Lỗi khi tải mô hình (cần kết nối mạng): {e}")
+        exit(1)
+        
+    # 4. Chuẩn bị danh sách samples
+    print(f"Chuẩn bị dữ liệu cho {len(dataset)} mẫu...")
+    samples = []
+    labels = []
+    
+    for idx, item in enumerate(dataset):
+        sample_id = f"sample_{idx:05d}"
+        
+        # Lấy transcript và nhãn từ dataset
+        transcript = item.get("text", "")  # Hoặc 'transcript' tuỳ format
+        emotion = item.get("emotion") or item.get("label")
+        
+        # Logic decode audio chuẩn API mới
+        audio_decoder = item.get("path") or item.get("audio")
+        try:
+            if hasattr(audio_decoder, "get_all_samples"):
+                audio_samples = audio_decoder.get_all_samples()
+                waveform = audio_samples.data.numpy()
+                sr = audio_samples.sample_rate
+                if waveform.ndim == 2 and waveform.shape[0] > 1:
+                    waveform = waveform.mean(axis=0)
+                elif waveform.ndim == 2 and waveform.shape[0] == 1:
+                    waveform = waveform[0]
+            else:
+                waveform = audio_decoder["array"]
+                sr = audio_decoder["sampling_rate"]
+                
+            if sr != 16000:
+                waveform = librosa.resample(waveform, orig_sr=sr, target_sr=16000)
+                
+            samples.append({
+                "sample_id": sample_id,
+                "waveform": torch.tensor(waveform, dtype=torch.float32),
+                "transcript": transcript
+            })
+            labels.append(emotion)
+        except Exception as e:
+            print(f"Lỗi khi chuẩn bị dữ liệu mẫu {idx}: {e}")
+            
+    # Gọi hàm trích xuất chính
+    print(f"Bắt đầu trích xuất đặc trưng cho {len(samples)} mẫu...")
+    extract_and_cache_all(
+        samples=samples,
+        wavlm_model=wavlm_model,
+        wavlm_processor=wavlm_processor,
+        phobert_model=phobert_model,
+        phobert_tokenizer=phobert_tokenizer,
+        cache_dir="data/embeddings/sequence",
+        device=device,
+        skip_existing=True
+    )
+    
+    # 5. Tổng hợp và lưu labels.npy
+    print("Đang lưu labels.npy...")
+    out_dir = Path("data/embeddings/sequence")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    np.save(out_dir / "labels.npy", np.array(labels))
+    print(f"=== HOÀN TẤT! Đã lưu {len(labels)} nhãn tại {out_dir / 'labels.npy'} ===")
