@@ -68,10 +68,7 @@ def download_visec_if_needed(raw_dir: str = "data/raw/audio"):
                     continue
                     
                 # Hỗ trợ cả API cũ (dict) và mới (AudioDecoder)
-                if isinstance(audio_decoder, dict) and "array" in audio_decoder:
-                    waveform = audio_decoder["array"]
-                    sr = audio_decoder["sampling_rate"]
-                else:
+                if hasattr(audio_decoder, "get_all_samples"):
                     # API mới: torchcodec.decoders.AudioDecoder
                     audio_samples = audio_decoder.get_all_samples()
                     waveform = audio_samples.data.numpy()  # shape (num_channels, num_samples)
@@ -82,6 +79,10 @@ def download_visec_if_needed(raw_dir: str = "data/raw/audio"):
                         waveform = waveform.mean(axis=0)
                     elif waveform.ndim == 2 and waveform.shape[0] == 1:
                         waveform = waveform[0]
+                else:
+                    # Fallback API cũ (dict)
+                    waveform = audio_decoder["array"]
+                    sr = audio_decoder["sampling_rate"]
                         
                 # Đảm bảo 16kHz
                 if sr != 16000:
