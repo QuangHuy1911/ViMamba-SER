@@ -65,12 +65,18 @@ def main(args):
     # 2. Khởi tạo mô hình
     model = ViMambaSERClassifier(fusion_force_fallback=args.force_fallback)
     
+    label_names = LABEL_NAMES # Default to config
+    
     # Thử tải checkpoint, nếu không có thì khởi tạo random weights để demo
     if os.path.exists(args.checkpoint):
         print(f"Loading checkpoint từ {args.checkpoint}...")
-        load_checkpoint(args.checkpoint, model=model, device=DEVICE)
+        ckpt = load_checkpoint(args.checkpoint, model=model, device=DEVICE)
+        if ckpt and 'label_encoder' in ckpt and 'LABEL_NAMES' in ckpt['label_encoder']:
+            label_names = ckpt['label_encoder']['LABEL_NAMES']
     else:
         print(f"CẢNH BÁO: Không tìm thấy checkpoint tại {args.checkpoint}. Đang dùng weights ngẫu nhiên (Mock mode)!")
+        
+    print(f"THỨ TỰ NHÃN ĐANG DÙNG ĐỂ VẼ: {label_names}")
         
     model.to(DEVICE)
     model.eval()
@@ -81,24 +87,35 @@ def main(args):
     all_embeddings = []
     
     print("Đang chạy inference trên tập test...")
-    with torch.no_grad():
-        for batch in test_loader:
-            a_seq, t_seq, a_mask, t_mask, y = batch
-            a_seq, t_seq = a_seq.to(DEVICE), t_seq.to(DEVICE)
-            a_mask, t_mask = a_mask.to(DEVICE), t_mask.to(DEVICE)
-            
-            # Forward pass thủ công để lấy embedding trước lớp classifier
-            enhanced, _ = model.tme(a_seq, t_seq, audio_mask=a_mask, text_mask=t_mask)
-            if model.proj is not None:
-                enhanced = model.proj(enhanced)
-            pooled = model.fusion(enhanced, mask=a_mask)
-            logits = model.classifier(pooled)
-            
-            preds = logits.argmax(dim=1)
-            
-            all_preds.extend(preds.cpu().numpy())
-            all_labels.extend(y.numpy())
-            all_embeddings.append(pooled.cpu().numpy())
+    try:
+        with torch.no_grad():
+            for batch in test_loader:
+                a_seq, t_seq, a_mask, t_mask, y = batch
+                a_seq, t_seq = a_seq.to(DEVICE), t_seq.to(DEVICE)
+                a_mask, t_mask = a_mask.to(DEVICE), t_mask.to(DEVICE)
+                
+                # Forward pass thủ công để lấy embedding trước lớp classifier
+                enhanced, _ = model.tme(a_seq, t_seq, audio_mask=a_mask, text_mask=t_mask)
+                if model.proj is not None:
+                    enhanced = model.proj(enhanced)
+                pooled = model.fusion(enhanced, mask=a_mask)
+                logits = model.classifier(pooled)
+                
+                preds = logits.argmax(dim=1)
+                
+                all_preds.extend(preds.cpu().numpy())
+                all_labels.extend(y.numpy())
+                all_embeddings.append(pooled.cpu().numpy())
+    except FileNotFoundError as e:
+        print(f"CẢNH BÁO: Bỏ qua inference thật vì thiếu file embeddings ({e}). Đang tạo dữ liệu giả để test script vẽ hình...")
+        # Tạo mock data
+        num_mock_samples = len(test_idx)
+        all_labels = labels[test_idx]
+        all_preds = np.random.randint(0, NUM_CLASSES, size=num_mock_samples)
+        # pooled shape (num_samples, 2*fusion_hidden)
+        # giả sử fusion_hidden = 768
+        mock_pooled = np.random.randn(num_mock_samples, 1536)
+        all_embeddings = [mock_pooled]
             
     all_preds = np.array(all_preds)
     all_labels = np.array(all_labels)
@@ -111,7 +128,7 @@ def main(args):
     cm = confusion_matrix(all_labels, all_preds)
     plt.figure(figsize=(8, 6))
     sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
-                xticklabels=LABEL_NAMES, yticklabels=LABEL_NAMES)
+                xticklabels=label_names, yticklabels=label_names)
     plt.title('Confusion Matrix - Phase F')
     plt.ylabel('True Label')
     plt.xlabel('Predicted Label')
@@ -128,7 +145,7 @@ def main(args):
     
     plt.figure(figsize=(10, 8))
     colors = ['#ff9999', '#66b3ff', '#99ff99', '#ffcc99'] # Happy, Neutral, Sad, Angry
-    for i, label in enumerate(LABEL_NAMES):
+    for i, label in enumerate(label_names):
         idx = (all_labels == i)
         plt.scatter(embeds_2d[idx, 0], embeds_2d[idx, 1], c=colors[i], label=label, alpha=0.7, edgecolors='w', s=50)
     plt.title('t-SNE Visualization of Sequence Fusion Embeddings (Phase F)')
