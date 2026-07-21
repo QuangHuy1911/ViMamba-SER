@@ -32,7 +32,7 @@ tme:
 
 # --- Fusion module ---
 fusion:
-  hidden_dim: 768        # giữ nguyên 768; giảm về 256-384 nếu overfit
+  hidden_dim: 256        # Đã giảm về 256 để tránh overfit trên tập dữ liệu nhỏ
   force_fallback: false   # true = ép BiGRU, false = dùng Mamba nếu có
   mamba_d_state: 16
   mamba_d_conv: 4
