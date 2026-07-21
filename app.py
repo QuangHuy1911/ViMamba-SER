@@ -31,11 +31,13 @@ if os.path.exists(checkpoint_path):
     ckpt = torch.load(checkpoint_path, map_location=device)
     config_dict = ckpt.get('config', {})
     
-    # Khởi tạo model giống lúc train Phase F (với hidden_dim=256)
+    # Khởi tạo model dựa trên config đã lưu trong checkpoint (hoặc mặc định 768 nếu cũ)
+    fusion_hidden = config_dict.get('fusion', {}).get('hidden_dim', 768)
+    
     model = ViMambaSERClassifier(
         embed_dim=768,
         num_classes=NUM_CLASSES,
-        fusion_hidden=256,
+        fusion_hidden=fusion_hidden,
         fusion_force_fallback=True
     ).to(device)
     
@@ -78,9 +80,20 @@ def process_audio(audio_path):
         logits = outputs['logits']
         probs = torch.softmax(logits, dim=1).squeeze().cpu().numpy()
         
-    # Tạo dictionary kết quả
-    results = {LABEL_NAMES[i].capitalize(): float(probs[i]) for i in range(NUM_CLASSES)}
+    # Tạo dictionary kết quả với Emoji
+    emoji_map = {
+        'happy': '😊 Happy',
+        'neutral': '😐 Neutral',
+        'sad': '😢 Sad',
+        'angry': '😠 Angry'
+    }
     
+    results = {}
+    for i in range(NUM_CLASSES):
+        label_key = LABEL_NAMES[i].lower()
+        display_name = emoji_map.get(label_key, LABEL_NAMES[i].capitalize())
+        results[display_name] = float(probs[i])
+        
     return transcript, results
 
 # Giao diện Gradio
@@ -92,8 +105,9 @@ demo = gr.Interface(
         gr.Label(num_top_classes=4, label="Cảm xúc dự đoán")
     ],
     title="🎙️ ViMamba-SER: Nhận dạng Cảm xúc Giọng nói Tiếng Việt",
-    description="Hệ thống kết hợp Âm thanh (WavLM) và Văn bản (PhoBERT) qua cơ chế Text-aware Modality Enhancement."
+    description="Hệ thống kết hợp Âm thanh (WavLM) và Văn bản (PhoBERT) qua cơ chế Text-aware Modality Enhancement.",
+    flagging_mode="never"
 )
 
 if __name__ == "__main__":
-    demo.launch(share=True)
+    demo.launch(share=True, css="footer {display: none !important;}")

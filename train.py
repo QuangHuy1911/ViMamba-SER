@@ -99,12 +99,19 @@ def train(args):
     
     print(f"--- Training Phase {args.phase.upper()} ---")
     
-    # Load labels — tìm theo thứ tự ưu tiên
-    labels_candidates = [
-        os.path.join("runs", "midterm_results", "labels.npy"),
-        os.path.join(args.embed_dir, "labels.npy"),
-        os.path.join(args.embed_dir, "sequence", "labels.npy"),
-    ]
+    # Load labels — ưu tiên theo phase
+    if args.phase == 'f':
+        labels_candidates = [
+            os.path.join(args.embed_dir, "sequence", "labels.npy"),
+            os.path.join("runs", "midterm_results", "labels.npy"),
+            os.path.join(args.embed_dir, "labels.npy"),
+        ]
+    else:
+        labels_candidates = [
+            os.path.join("runs", "midterm_results", "labels.npy"),
+            os.path.join(args.embed_dir, "labels.npy"),
+            os.path.join(args.embed_dir, "sequence", "labels.npy"),
+        ]
     labels_path = None
     for lp in labels_candidates:
         if os.path.exists(lp):
@@ -183,7 +190,7 @@ def train(args):
         # Load config from phase_f.yaml
         config_f = {}
         try:
-            with open("configs/phase_f.yaml", "r") as f:
+            with open("configs/phase_f.yaml", "r", encoding="utf-8") as f:
                 config_f = yaml.safe_load(f)
         except Exception as e:
             print(f"Warning: Could not load phase_f.yaml. Using defaults. {e}")
@@ -209,7 +216,9 @@ def train(args):
         
     model = model.to(device)
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-    criterion = nn.CrossEntropyLoss()
+    
+    from src.utils.loss import get_loss_function
+    criterion = get_loss_function(args.loss_type, device)
     
     best_val_acc = 0.0
     best_epoch = 0
@@ -383,6 +392,7 @@ if __name__ == "__main__":
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--weight_decay", type=float, default=1e-4)
     parser.add_argument("--force_fallback", action="store_true")
+    parser.add_argument("--loss_type", type=str, default="ce", choices=["ce", "weighted", "focal"], help="Loại hàm mất mát để sử dụng")
     parser.add_argument("--embed_dir", type=str, default="data/embeddings")
     parser.add_argument("--save_dir", type=str, default="runs")
     parser.add_argument("--data_split", type=str, default="data/embeddings/splits.json")
