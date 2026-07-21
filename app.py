@@ -25,8 +25,8 @@ wavlm_extractor = Wav2Vec2FeatureExtractor.from_pretrained("microsoft/wavlm-base
 wavlm_model = WavLMModel.from_pretrained("microsoft/wavlm-base").to(device)
 
 # 4. Tải Model ViMamba-SER (Não bộ Demo)
-# LƯU Ý CHO ĐẠT: Kiểm tra xem file f_seed42_best.pt có nằm đúng trong thư mục runs/ không nhé!
-checkpoint_path = "runs/f_seed42_best.pt"
+# LƯU Ý CHO ĐẠT: Kiểm tra xem file f_fold0_best.pt có nằm đúng trong thư mục runs/ không nhé!
+checkpoint_path = "runs/f_fold0_best.pt"
 if os.path.exists(checkpoint_path):
     ckpt = torch.load(checkpoint_path, map_location=device)
     config_dict = ckpt.get('config', {})
