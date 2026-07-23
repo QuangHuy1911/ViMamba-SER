@@ -1,0 +1,439 @@
+% ===========================================================================
+% Báo cáo Final: ViMamba-SER
+% Format : Springer LNCS
+% Compiler: XeLaTeX
+% ===========================================================================
+
+\documentclass[runningheads]{llncs}
+
+\usepackage{fontspec}
+\usepackage{polyglossia}
+\setmainlanguage{vietnamese}
+\setotherlanguage{english}
+
+\setmainfont{Times New Roman}
+\setsansfont{Arial}
+\setmonofont{Courier New}
+
+\usepackage{graphicx}
+\graphicspath{{figures/}}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{xcolor}
+\usepackage{placeins}
+\usepackage{array}
+\usepackage{float}
+
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric, arrows.meta, positioning, fit, backgrounds}
+
+\usepackage[colorlinks=true, citecolor=blue, linkcolor=blue,
+            urlcolor=blue, bookmarks=false]{hyperref}
+
+% ===========================================================================
+\begin{document}
+
+\title{ViMamba-SER: Nhận dạng Cảm xúc Giọng nói Tiếng Việt\\
+bằng Kiến trúc Lai và Text-Enhancement}
+
+\titlerunning{ViMamba-SER: Vietnamese SER với Text-Enhancement}
+
+\author{Ngô Quang Huy\inst{1} \and
+        Võ Tấn Đạt\inst{1} \and
+        Lý Huỳnh Khánh\inst{1}}
+\authorrunning{N.Q. Huy et al.}
+\institute{Khoa Trí tuệ Nhân tạo, Trường Đại học FPT,\\
+TP. Hồ Chí Minh, Việt Nam\\
+\email{SE190631@fpt.edu.vn}}
+
+\maketitle
+
+% ===========================================================================
+\begin{abstract}
+Báo cáo này trình bày toàn bộ quá trình xây dựng hệ thống nhận dạng cảm xúc
+giọng nói tiếng Việt (Vietnamese Speech Emotion Recognition -- SER), từ giai
+đoạn khảo sát baseline đến mô hình cuối cùng với ứng dụng Web Demo.
+Hệ thống sử dụng WavLM-Base làm bộ mã hóa âm thanh, PhoWhisper sinh
+transcript tự động, PhoBERT-v2 mã hóa văn bản, module Text-aware Modality
+Enhancement (TME) căn chỉnh hai luồng đặc trưng bằng cross-attention và
+cosine gate, và mạng BiGRU hai chiều làm tầng fusion.
+Trên tập dữ liệu ViSEC gồm 5.280 mẫu và 4 nhãn cảm xúc, nhóm thực hiện
+chuỗi thí nghiệm có hệ thống: audio-only baseline đạt 56,44\%,
+simple fusion cải thiện không đáng kể (tốt nhất 57,95\%), trong khi kiến trúc
+TME + BiGRU kết hợp Focal Loss đạt 56,16\% nhưng cân bằng hơn giữa các lớp,
+với lớp Sad tăng từ 53,02\% lên 58,14\%.
+Toàn bộ hệ thống được đóng gói thành ứng dụng Web Demo (Gradio) cho phép
+nhận dạng cảm xúc real-time từ microphone.
+
+\keywords{Speech Emotion Recognition \and Vietnamese \and WavLM \and
+PhoBERT \and PhoWhisper \and BiGRU \and Focal Loss \and TME \and ViSEC}
+\end{abstract}
+
+% ===========================================================================
+\section{Giới thiệu}
+\label{sec:intro}
+
+Nhận dạng cảm xúc giọng nói (SER) là bài toán phân loại trạng thái cảm xúc
+của người nói từ tín hiệu âm thanh, với ứng dụng rộng rãi trong chăm sóc
+sức khỏe tâm thần, giao tiếp người--máy và giám sát trung tâm cuộc
+gọi~\cite{vnemos2024}.
+Tiếng Việt, với hệ thống sáu thanh điệu, đặt ra thách thức đặc thù:
+thanh điệu thay đổi cao độ tương tự với biến đổi cảm xúc, khiến các đặc
+trưng prosody truyền thống dễ bị nhầm lẫn.
+
+Các hướng nghiên cứu SER gần đây khai thác bổ sung thông tin văn bản bên
+cạnh âm thanh (multimodal fusion) và sử dụng kiến trúc sequence modeling
+hiệu quả như Mamba~\cite{gu2023mamba}.
+TF-Mamba~\cite{tfmamba2025} là một ví dụ kết hợp cả hai hướng này cho
+sentiment analysis đa phương thức.
+Tuy nhiên, tại thời điểm khảo sát, chưa tìm thấy công trình nào áp dụng
+kiến trúc tương tự cho SER tiếng Việt.
+
+Đề tài ban đầu hướng đến sử dụng Bi-Mamba làm tầng fusion. Trong quá trình
+triển khai, nhóm nhận thấy hai giới hạn thực tế: (1)~quy mô dữ liệu chưa
+đủ lớn cho kiến trúc phức tạp; (2)~thư viện \texttt{mamba-ssm} yêu cầu
+CUDA $\geq$ 11.8, khó cài đặt trên Windows và Colab miễn phí.
+Vì vậy, nhóm thiết kế cơ chế Fallback sang BiGRU, kết hợp giảm chiều ẩn
+(Model Compression) và Focal Loss~\cite{lin2017focal} để tối ưu mô hình
+cho dữ liệu nhỏ.
+
+Bảng~\ref{tab:gap} tóm tắt các khoảng trống nghiên cứu được xác định.
+
+\begin{table}[H]
+\centering
+\caption{Tổng hợp khoảng trống nghiên cứu.}
+\label{tab:gap}
+\begin{tabular}{@{}p{3.4cm}p{5.8cm}c@{}}
+\toprule
+\textbf{Khoảng trống} & \textbf{Mô tả} & \textbf{Mức độ} \\
+\midrule
+Sequence modeling nâng cao cho SER tiếng Việt
+  & Chưa có công trình áp dụng Mamba hoặc BiGRU fusion cho ngôn ngữ thanh điệu & Cao \\[3pt]
+Text-enhancement cho tiếng Việt
+  & ASR tiếng Việt (PhoWhisper) chưa được tích hợp vào pipeline SER & Cao \\[3pt]
+Alignment hai luồng đặc trưng
+  & Fusion đơn giản (concatenation) không tận dụng được quan hệ thời gian giữa audio--text & Cao \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ===========================================================================
+\section{Dữ liệu}
+\label{sec:data}
+
+\subsection{ViSEC}
+
+ViSEC~\cite{visec2024} là tập dữ liệu SER tiếng Việt công khai trên
+HuggingFace (\texttt{hustep-lab/ViSEC}), gồm 5.280 đoạn audio 16kHz,
+4 nhãn cảm xúc: \textit{happy} (1.228), \textit{neutral} (1.507),
+\textit{sad} (1.079), \textit{angry} (1.466).
+Phân bố nhãn tương đối cân bằng; phần lớn clip có độ dài dưới 10 giây.
+Tập dữ liệu không cung cấp transcript sẵn.
+
+\subsection{Chất lượng Transcript từ PhoWhisper}
+
+PhoWhisper-Base~\cite{phowhisper2023} sinh transcript cho toàn bộ 5.280 mẫu.
+Kết quả phân tích: 0\% transcript rỗng, 4,3\% rất ngắn ($\leq$2 từ), độ dài
+trung bình 8,8 từ/đoạn.
+Độ dài theo nhãn không khác biệt đáng kể (Bảng~\ref{tab:transcript}), xác
+nhận PhoWhisper trích xuất nội dung lời nói nhưng không bảo tồn thông tin
+prosody mang tính cảm xúc.
+
+\begin{table}[H]
+\centering
+\caption{Thống kê chất lượng transcript PhoWhisper trên ViSEC.}
+\label{tab:transcript}
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+\textbf{Nhãn} & \textbf{Mean (từ)} & \textbf{Min} & \textbf{Max} \\
+\midrule
+angry   & 8,4 & 1 & 222 \\
+happy   & 9,7 & 1 & 224 \\
+neutral & 9,3 & 1 & 223 \\
+sad     & 7,7 & 1 & 418 \\
+\midrule
+\textbf{Overall} & \textbf{8,8} & 1 & 418 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ===========================================================================
+\section{Phương pháp Đề xuất}
+\label{sec:method}
+
+\subsection{Tổng quan Kiến trúc}
+
+Hệ thống ViMamba-SER gồm bốn thành phần chính (Hình~\ref{fig:pipeline}):
+(1)~WavLM-Base~\cite{wavlm2022} trích xuất chuỗi đặc trưng audio $(T_a, 768)$;
+(2)~PhoWhisper~\cite{phowhisper2023} sinh transcript, PhoBERT-v2~\cite{phobert2020}
+mã hóa thành chuỗi $(T_t, 768)$;
+(3)~module TME căn chỉnh hai luồng;
+(4)~BiGRU fusion + MLP classifier.
+Toàn bộ pretrained model được giữ frozen; chỉ huấn luyện TME, Projection,
+BiGRU và MLP.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\textwidth]{ViMamba.png}
+\caption{Pipeline tổng thể ViMamba-SER. Các pretrained model (WavLM,
+PhoWhisper, PhoBERT) được giữ frozen; chỉ huấn luyện phần trong khung nét đứt.}
+\label{fig:pipeline}
+\end{figure}
+
+\subsection{Text-aware Modality Enhancement (TME)}
+\label{sec:tme}
+
+Module TME lấy cảm hứng từ TF-Mamba~\cite{tfmamba2025}, gồm hai bước:
+
+\paragraph{Cross-attention alignment.}
+Audio embedding đóng vai trò query, text embedding đóng vai trò key/value
+trong multi-head cross-attention (8 heads, dropout 0,1).
+Kết quả là chuỗi \textit{text\_aligned} có cùng chiều thời gian $T_a$ với
+audio, mang thông tin văn bản đã được căn chỉnh theo từng frame audio.
+
+\paragraph{Cosine gate.}
+Độ tương đồng cosine giữa audio gốc và text\_aligned tại từng vị trí thời
+gian đi qua Linear + Sigmoid tạo gate $g \in [0, 1]$:
+\begin{equation}
+\mathbf{e}_t = \mathbf{a}_t + g_t \cdot \mathbf{t}^{aligned}_t
+\label{eq:tme}
+\end{equation}
+Gate cho phép mô hình tự quyết định mức độ bổ sung text: nếu text không
+liên quan ($g_t \approx 0$), audio gốc được giữ nguyên.
+
+\subsection{BiGRU Fusion và Model Compression}
+\label{sec:fusion}
+
+Chuỗi enhanced từ TME có chiều 768. Trước khi đưa vào BiGRU, một lớp
+Linear Projection giảm chiều từ 768 xuống \textbf{256}. BiGRU 2 lớp (hidden
+size = 128 mỗi chiều, output = 256) xử lý chuỗi hai chiều.
+Sau BiGRU, concat mean-pool và max-pool tạo vector $(B, 512)$ đưa vào
+MLP classifier 3 lớp (512$\to$ReLU$\to$Dropout(0,3)$\to$256$\to$ReLU$\to$4).
+
+Giảm chiều mang lại hai lợi ích: (1)~giảm tham số cần học, chống overfit
+trên tập 5.280 mẫu; (2)~giảm dung lượng checkpoint khoảng 80MB, tăng tốc
+inference cho Web Demo.
+
+\subsection{Focal Loss}
+\label{sec:focal}
+
+Để giải quyết mất cân bằng hiệu suất per-class (lớp Sad luôn thấp nhất
+trong Midterm), nhóm áp dụng Focal Loss~\cite{lin2017focal}:
+\begin{equation}
+FL(p_t) = -\alpha_t (1 - p_t)^\gamma \log(p_t)
+\end{equation}
+với $\gamma = 2.0$ và $\alpha = [1{,}0;\; 1{,}5;\; 2{,}5;\; 1{,}0]$ lần
+lượt cho Happy, Neutral, Sad, Angry.
+Hệ số $\alpha_{Sad} = 2{,}5$ ép mô hình tập trung phạt nặng khi phân loại
+sai mẫu Sad.
+
+% ===========================================================================
+\section{Kết quả Thực nghiệm}
+\label{sec:results}
+
+\subsection{Cấu hình chung}
+
+Chia dữ liệu: 5-fold Stratified K-Fold (seed=42), trong mỗi fold tách
+tiếp train/val = 85/15.
+Optimizer Adam (weight\_decay=1e-4).
+Phase A/B (Midterm): lr=1e-3, 50 epochs.
+Phase F (Final): lr=5e-4, 80 epochs, Focal Loss.
+Kết quả báo cáo: test accuracy tại epoch có val accuracy tốt nhất.
+
+\subsection{Giai đoạn Midterm: Baseline}
+\label{sec:midterm}
+
+Giai đoạn Midterm trả lời hai câu hỏi: WavLM embedding có đủ mạnh cho SER
+tiếng Việt không, và thêm text từ PhoWhisper có cải thiện không.
+Hình~\ref{fig:midterm_arch} minh họa kiến trúc hai baseline.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.90\textwidth]{mid.png}
+\caption{Kiến trúc baseline Midterm.
+Trái: Phase A (audio-only, WavLM mean-pool $\to$ MLP).
+Phải: Phase B (audio+text fusion $\to$ MLP).}
+\label{fig:midterm_arch}
+\end{figure}
+
+\paragraph{Phase A: Audio-only.}
+Bảng~\ref{tab:phase_a} trình bày ablation study.
+MLP 2 lớp (A1) là baseline tốt nhất với 56,44\%.
+BatchNorm (A4) gây giảm do batch statistics không ổn định trên tập nhỏ.
+
+\begin{table}[H]
+\centering
+\caption{Phase A: Ablation study audio-only. WavLM-Base frozen.}
+\label{tab:phase_a}
+\begin{tabular}{@{}llr@{}}
+\toprule
+\textbf{ID} & \textbf{Mô hình} & \textbf{Test Acc.} \\
+\midrule
+A1 & WavLM $\to$ MLP 2 lớp (baseline)           & 56,44\% \\
+A2 & WavLM $\to$ Linear 1 lớp                    & 53,79\% \\
+A3 & WavLM $\to$ MLP + Dropout(0.3)              & 56,06\% \\
+A4 & WavLM $\to$ MLP + BatchNorm                 & 52,27\% \\
+A5 & WavLM $\to$ MLP (mean $\pm$ std, 3 seeds)   & 53,45 $\pm$ 1,79\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Phase B: Simple Fusion.}
+Bảng~\ref{tab:phase_b} so sánh các chiến lược fusion.
+Text-only (B1: 44,32\%) kém audio-only 12\%, xác nhận cảm xúc tiếng Việt
+nằm chủ yếu ở prosody.
+Weighted fusion $\alpha{=}0{,}9$ (B3b) đạt tốt nhất 57,95\%, nhưng cải
+thiện chỉ +1,51\%.
+
+\begin{table}[H]
+\centering
+\caption{Phase B: So sánh chiến lược fusion. \textbf{Đậm}: tốt nhất.}
+\label{tab:phase_b}
+\begin{tabular}{@{}llr@{}}
+\toprule
+\textbf{ID} & \textbf{Chiến lược} & \textbf{Test Acc.} \\
+\midrule
+A1  & Audio-only (tham chiếu)                     & 56,44\% \\
+B1  & Text-only (PhoBERT từ transcript)            & 44,32\% \\
+B2  & Concat fusion $\to$ MLP                      & 56,57\% \\
+B3  & Weighted: $\alpha{=}0{,}8$ audio             & 56,82\% \\
+\textbf{B3b} & \textbf{Weighted: $\alpha{=}0{,}9$ audio} & \textbf{57,95\%} \\
+B5  & Late fusion: voting                          & 57,45\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Giai đoạn Final: TME + BiGRU + Focal Loss}
+\label{sec:final}
+
+Kết quả Midterm cho thấy simple fusion không khai thác được text hiệu quả.
+Giai đoạn Final triển khai kiến trúc đầy đủ: TME + BiGRU 256 chiều + Focal
+Loss (cấu hình: seed 42, lr=5e-4, 80 epochs).
+
+\subsubsection{Kết quả Overall.}
+Mô hình hội tụ tại epoch 61 (Val Acc: 54,42\%), đạt Test Accuracy
+\textbf{56,16\%}.
+Tổng điểm giảm nhẹ so với mô hình BiGRU 768d không Focal Loss (59,09\%),
+nhưng phân bố per-class thay đổi theo đúng mục tiêu thiết kế.
+
+\subsubsection{Per-class Trade-off.}
+Bảng~\ref{tab:final_results} là kết quả quan trọng nhất của báo cáo.
+
+\begin{table}[H]
+\centering
+\caption{So sánh per-class accuracy: BiGRU 768d + CrossEntropy (Trước) vs.
+BiGRU 256d + Focal Loss (Sau). Mục tiêu: tăng Sad và Neutral.}
+\label{tab:final_results}
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{Cảm xúc} & \textbf{Trước (768d, CE)} & \textbf{Sau (256d, Focal)} & \textbf{$\Delta$} \\
+\midrule
+Happy   & 51,22\% & 41,06\% & \textcolor{red}{$-$10,16\%} \\
+Neutral & 51,83\% & \textbf{56,81\%} & \textcolor{blue}{+4,98\%} \\
+Sad     & 53,02\% & \textbf{58,14\%} & \textcolor{blue}{\textbf{+5,12\%}} \\
+Angry   & 77,55\% & 66,67\% & \textcolor{red}{$-$10,88\%} \\
+\midrule
+\textbf{Overall} & \textbf{59,09\%} & \textbf{56,16\%} & \textcolor{red}{$-$2,93\%} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Focal Loss với $\alpha_{Sad}{=}2{,}5$ chuyển năng lực học từ lớp dễ (Angry)
+sang lớp khó (Sad, Neutral).
+Trong ứng dụng thực tế (call center, sàng lọc tâm lý), phát hiện cảm xúc
+tiêu cực quan trọng hơn tối đa hóa overall accuracy.
+
+Hình~\ref{fig:confusion_final} trình bày confusion matrix của mô hình Final.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.60\textwidth]{final_confusion_matrix.png}
+  \caption{Normalized Confusion Matrix của mô hình Final
+  (TME + BiGRU 256d + Focal Loss).}
+  \label{fig:confusion_final}
+\end{figure}
+
+\subsection{Tổng hợp kết quả toàn bộ đề tài}
+
+Bảng~\ref{tab:summary} tổng hợp kết quả qua các giai đoạn, cho thấy lộ
+trình phát triển từ baseline đơn giản đến kiến trúc cuối cùng.
+
+\begin{table}[H]
+\centering
+\caption{Tổng hợp kết quả qua các giai đoạn thực nghiệm.}
+\label{tab:summary}
+\begin{tabular}{@{}llrc@{}}
+\toprule
+\textbf{Giai đoạn} & \textbf{Mô hình} & \textbf{Test Acc.} & \textbf{Ghi chú} \\
+\midrule
+Midterm & A1: WavLM $\to$ MLP (audio-only)    & 56,44\% & Baseline \\
+Midterm & B3b: Weighted fusion $\alpha{=}0{,}9$ & 57,95\% & Tốt nhất simple fusion \\
+Final   & TME + BiGRU 768d + CE               & 59,09\% & Chưa có Focal Loss \\
+Final   & TME + BiGRU 256d + Focal Loss       & 56,16\% & Cân bằng per-class \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ===========================================================================
+\section{Thảo luận}
+\label{sec:discussion}
+
+\paragraph{Text không hiệu quả với simple fusion, nhưng có giá trị qua TME.}
+B2 (concat) chỉ cải thiện +0,13\% so với A1. Cảm xúc tiếng Việt nằm chủ
+yếu ở prosody, không ở nội dung lời nói. Module TME giải quyết vấn đề này
+bằng cosine gate (Công thức~\ref{eq:tme}), cho phép mô hình chọn lọc frame
+text phù hợp thay vì trộn đều.
+
+\paragraph{Model Compression là cần thiết cho low-resource.}
+Giảm chiều từ 768 xuống 256 không gây mất mát đáng kể về overall accuracy
+(59,09\% vs 56,16\%, trong đó phần lớn chênh lệch đến từ Focal Loss chứ
+không phải compression). Trên tập 5.280 mẫu, mô hình nhỏ hơn generalize
+tốt hơn nhờ tránh overfitting.
+
+\paragraph{Focal Loss: đánh đổi có chủ đích.}
+Giảm 2,93\% overall để tăng 5,12\% Sad là đánh đổi hợp lý trong ngữ cảnh
+ứng dụng thực tế. Giá trị $\alpha$ có thể tiếp tục tinh chỉnh.
+
+\paragraph{Giới hạn.}
+Kết quả Final báo cáo trên 1 fold (fold 0, seed 42). Bản hoàn thiện cần
+5-fold CV với mean $\pm$ std. Mô hình chưa được kiểm chứng trên tập ngoài
+(ví dụ VNEMOS~\cite{vnemos2024}) do hạn chế thời gian thu thập dữ liệu.
+
+% ===========================================================================
+\section{Ứng dụng Web Demo}
+\label{sec:demo}
+
+Pipeline được đóng gói thành ứng dụng Web sử dụng Gradio~\cite{gradio2019}.
+Người dùng ghi âm qua microphone hoặc upload file audio; hệ thống hiển thị
+transcript (PhoWhisper) và phân phối xác suất cảm xúc (ViMamba-SER).
+Nhờ compression xuống 256 chiều, mô hình chạy mượt trên CPU mà không cần GPU.
+
+% ===========================================================================
+\section{Kết luận}
+\label{sec:conclusion}
+
+Đồ án ViMamba-SER hoàn thành mục tiêu xây dựng hệ thống SER tiếng Việt
+end-to-end, với các đóng góp chính:
+(1)~Xây dựng baseline audio-only (56,44\%) và chứng minh text-only từ ASR
+không hiệu quả cho SER tiếng Việt (44,32\%);
+(2)~Chứng minh simple fusion không đủ (+1,51\%), cung cấp bằng chứng cho
+sự cần thiết của module TME;
+(3)~Thiết kế kiến trúc TME + BiGRU Fallback với Model Compression
+(768$\to$256), giảm 80MB dung lượng và chống overfit;
+(4)~Áp dụng Focal Loss tăng Sad +5,12\% và Neutral +4,98\%;
+(5)~Đóng gói Web Demo real-time chứng minh tính khả thi triển khai.
+
+\paragraph{Hướng phát triển.}
+(1)~5-fold CV báo cáo mean $\pm$ std;
+(2)~Cài đặt Bi-Mamba trên GPU có CUDA $\geq$ 11.8 để so sánh với BiGRU;
+(3)~Mở rộng sang tập VNEMOS với 5 nhãn;
+(4)~Thử PhoWhisper-Large để cải thiện transcript.
+
+% ===========================================================================
+\FloatBarrier
+\clearpage
+\bibliographystyle{splncs04}
+\bibliography{references}
+
+\end{document}

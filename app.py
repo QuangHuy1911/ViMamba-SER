@@ -29,10 +29,15 @@ wavlm_model = WavLMModel.from_pretrained("microsoft/wavlm-base").to(device)
 checkpoint_path = "runs/f_fold0_best.pt"
 if os.path.exists(checkpoint_path):
     ckpt = torch.load(checkpoint_path, map_location=device)
-    config_dict = ckpt.get('config', {})
+    model_state = ckpt['model_state_dict']
     
-    # Khởi tạo model dựa trên config đã lưu trong checkpoint (hoặc mặc định 768 nếu cũ)
-    fusion_hidden = config_dict.get('fusion', {}).get('hidden_dim', 768)
+    # Tự động suy luận kích thước từ file model thực tế
+    # layer "fusion.seq_block.gru.weight_ih_l0" có shape là (3*hidden_size, fusion_hidden)
+    gru_weight = model_state.get('fusion.seq_block.gru.weight_ih_l0')
+    if gru_weight is not None:
+        fusion_hidden = gru_weight.shape[1]
+    else:
+        fusion_hidden = 768  # Mặc định an toàn
     
     model = ViMambaSERClassifier(
         embed_dim=768,
